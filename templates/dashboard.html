@@ -6,7 +6,7 @@
   <title>ZAPPIT</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body class="dashboard-page">
+<body class="dashboard-page" data-has-active-chat="{{ 'true' if has_active_chat else 'false' }}">
   <header class="topbar">
     <div class="topbar-left">
       <div class="brand-badge">ZappIT</div>
@@ -21,36 +21,59 @@
   <main class="dashboard-layout">
     <section class="orders-panel">
       <h2>Your Orders</h2>
-      <div class="orders-table-wrap">
-        <table class="orders-table">
-          <thead>
-            <tr>
-              <th>Order ID</th>
-              <th>Item</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for order in orders %}
-              <tr>
-                <td>{{ order.order_id }}</td>
-                <td>{{ order.item_name }}</td>
-                <td>
-                  <span class="status-pill status-{{ order.status|lower|replace(' ', '-') }}">
-                    {{ order.status }}
-                  </span>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+      <div class="orders-list">
+        {% for order in orders %}
+          {% set status = order.status|lower %}
+          <article class="order-card">
+            <div class="order-card-head">
+              <div>
+                <p class="order-id">Order #{{ order.order_id }}</p>
+                <p class="order-item">{{ order.item_name }}</p>
+              </div>
+              <span class="status-pill status-{{ status|replace(' ', '-') }}">{{ order.status }}</span>
+            </div>
+
+            <div class="order-timeline {% if status == 'cancelled' %}is-cancelled{% endif %}">
+              <div class="timeline-step {% if status in ['preparing', 'out for delivery', 'delivered'] %}completed{% endif %} {% if status == 'preparing' %}active{% endif %}">
+                <span class="timeline-dot"></span>
+                <span class="timeline-label">Preparing</span>
+              </div>
+              <div class="timeline-line"></div>
+
+              <div class="timeline-step {% if status in ['out for delivery', 'delivered'] %}completed{% endif %} {% if status == 'out for delivery' %}active{% endif %}">
+                <span class="timeline-dot"></span>
+                <span class="timeline-label">Out for delivery</span>
+              </div>
+              <div class="timeline-line"></div>
+
+              <div class="timeline-step {% if status == 'delivered' %}completed active{% endif %}">
+                <span class="timeline-dot"></span>
+                <span class="timeline-label">Delivered</span>
+              </div>
+              <div class="timeline-line"></div>
+
+              <div class="timeline-step {% if status == 'cancelled' %}cancelled active{% endif %}">
+                <span class="timeline-dot"></span>
+                <span class="timeline-label">Cancelled</span>
+              </div>
+            </div>
+          </article>
+        {% endfor %}
       </div>
     </section>
 
     <section class="chat-panel">
+      <div id="resume-card" class="resume-card" {% if not has_active_chat %}hidden{% endif %}>
+        <p>Is your previous query resolved?</p>
+        <div class="resume-actions">
+          <button id="resolve-yes-btn" type="button">Yes</button>
+          <button id="resolve-no-btn" type="button">No</button>
+        </div>
+      </div>
+
       <div class="chat-header">
         <h2>ZAPPIT</h2>
-        <p class="chat-hint" >Try: <strong>order status</strong> or <strong>order status 1021</strong>.</p>
+        <p class="chat-hint">Try: <strong>order status</strong> or <strong>order status 1021</strong>.</p>
       </div>
 
       <p class="quick-prompts-title">Quick actions</p>
@@ -59,10 +82,6 @@
         <button type="button" class="chip" data-msg="order status">Check order status</button>
         <button type="button" class="chip" data-msg="how can i cancel an order">Cancel order</button>
         <button type="button" class="chip" data-msg="delivery charges">Delivery charges</button>
-        <button type="button" class="chip" data-msg="how do i request a refund">Refund help</button>
-        <button type="button" class="chip" data-msg="what if an item is missing or wrong">Missing or wrong item</button>
-        <button type="button" class="chip" data-msg="how can i contact customer support">Contact support</button>
-        <button type="button" class="chip" data-msg="how long does delivery usually take">Delivery time</button>
       </div>
 
       <div id="chat-window" class="chat-window">
@@ -72,10 +91,51 @@
         </div>
       </div>
 
+      <div id="smart-suggestions" class="smart-suggestions" aria-live="polite"></div>
+
+      <div id="voice-state-panel" class="listening-animation" hidden>
+        <div id="wave-bars" class="wave-bars" hidden>
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div id="processing-indicator" class="processing-indicator" hidden>
+          <span></span><span></span><span></span>
+        </div>
+        <p id="voice-state-text">Listening...</p>
+      </div>
+
       <form id="chat-form" class="chat-form">
         <input id="chat-input" type="text" placeholder="Type your message..." autocomplete="off" required>
+        <button id="mic-btn" type="button" class="mic-button" aria-label="Use voice input" title="Use voice input">
+          <span aria-hidden="true">🎤</span>
+        </button>
         <button id="send-btn" type="submit">Send</button>
       </form>
+
+      <div class="voice-controls" aria-label="Voice settings">
+        <p class="voice-controls-title">Voice settings</p>
+        <div class="voice-controls-grid">
+          <label class="voice-control">
+            <span>Style</span>
+            <select id="voice-style">
+              <option value="sweet" selected>Sweet (recommended)</option>
+              <option value="natural">Natural</option>
+              <option value="clear">Clear</option>
+            </select>
+          </label>
+          <label class="voice-control">
+            <span>Speed</span>
+            <input id="voice-rate" type="range" min="0.75" max="1.15" step="0.01" value="0.92">
+          </label>
+          <label class="voice-control">
+            <span>Pitch</span>
+            <input id="voice-pitch" type="range" min="0.85" max="1.35" step="0.01" value="1.05">
+          </label>
+          <label class="voice-control">
+            <span>Volume</span>
+            <input id="voice-volume" type="range" min="0.4" max="1" step="0.01" value="1">
+          </label>
+        </div>
+      </div>
     </section>
   </main>
 

@@ -59,6 +59,27 @@ def init_db() -> None:
         """
     )
 
+    # Added: persistent chat continuity storage
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            message TEXT NOT NULL,
+            sender TEXT NOT NULL CHECK (sender IN ('user', 'bot')),
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            active INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chat_history_user_active
+        ON chat_history (user_id, active, id)
+        """
+    )
+
     users = [(i, f"user{i}", f"pass{i}") for i in range(1, 6)]
     cur.executemany(
         "INSERT OR IGNORE INTO users (id, username, password) VALUES (?, ?, ?)", users
@@ -163,6 +184,28 @@ def init_db() -> None:
 def get_faq_questions(conn: sqlite3.Connection) -> list[str]:
     rows = conn.execute("SELECT question FROM faq ORDER BY id").fetchall()
     return [row["question"] for row in rows]
+
+
+def has_active_chat(conn: sqlite3.Connection, user_id: int) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM chat_history WHERE user_id = ? AND active = 1 LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    return bool(row)
+
+
+def save_chat_exchange(
+    conn: sqlite3.Connection, user_id: int, user_message: str, bot_message: str
+) -> None:
+    conn.execute(
+        "INSERT INTO chat_history (user_id, message, sender, active) VALUES (?, ?, 'user', 1)",
+        (user_id, user_message),
+    )
+    conn.execute(
+        "INSERT INTO chat_history (user_id, message, sender, active) VALUES (?, ?, 'bot', 1)",
+        (user_id, bot_message),
+    )
+    conn.commit()
 
 
 def get_faq_answer(conn: sqlite3.Connection, question: str) -> Optional[str]:
@@ -395,6 +438,7 @@ def dashboard():
         "SELECT order_id, item_name, status FROM orders WHERE user_id = ? ORDER BY order_id DESC",
         (session["user_id"],),
     ).fetchall()
+    active_chat_exists = has_active_chat(conn, int(session["user_id"]))
     conn.close()
 
     return render_template(
@@ -402,6 +446,7 @@ def dashboard():
         username=session.get("username"),
         user_id=session.get("user_id"),
         orders=orders,
+        has_active_chat=active_chat_exists,
     )
 
 
@@ -416,14 +461,17 @@ def chat():
         return jsonify({"reply": FALLBACK_MESSAGE})
 
     conn = get_db_connection()
+    reply = FALLBACK_MESSAGE
 
     if is_order_history_intent(user_message):
         user_orders = conn.execute(
             "SELECT order_id, item_name, status FROM orders WHERE user_id = ? ORDER BY order_id DESC",
             (session["user_id"],),
         ).fetchall()
+        reply = build_all_orders_response(user_orders)
+        save_chat_exchange(conn, int(session["user_id"]), user_message, reply)
         conn.close()
-        return jsonify({"reply": build_all_orders_response(user_orders)})
+        return jsonify({"reply": reply})
 
     order_id = parse_order_status_query(user_message)
     if order_id is not None:
@@ -431,21 +479,13 @@ def chat():
             "SELECT order_id, item_name, status FROM orders WHERE order_id = ? AND user_id = ?",
             (order_id, session["user_id"]),
         ).fetchone()
-        conn.close()
-
         if row:
-            return jsonify(
-                {
-                    "reply": (
-                        f"Order #{row['order_id']} ({row['item_name']}) is currently: {row['status']}."
-                    )
-                }
-            )
-        return jsonify(
-            {
-                "reply": "Order not found for your account. Please check the order ID and try again."
-            }
-        )
+            reply = f"Order #{row['order_id']} ({row['item_name']}) is currently: {row['status']}."
+        else:
+            reply = "Order not found for your account. Please check the order ID and try again."
+        save_chat_exchange(conn, int(session["user_id"]), user_message, reply)
+        conn.close()
+        return jsonify({"reply": reply})
 
     if is_order_status_intent(user_message):
         user_orders = conn.execute(
@@ -458,39 +498,83 @@ def chat():
 
         if len(active_orders) == 1:
             row = active_orders[0]
+            reply = f"Order #{row['order_id']} ({row['item_name']}) is currently: {row['status']}."
+            save_chat_exchange(conn, int(session["user_id"]), user_message, reply)
             conn.close()
-            return jsonify(
-                {
-                    "reply": (
-                        f"Order #{row['order_id']} ({row['item_name']}) is currently: {row['status']}."
-                    )
-                }
-            )
+            return jsonify({"reply": reply})
 
         if len(active_orders) > 1:
-            prompt = build_order_selection_prompt(active_orders, active_only=True)
+            reply = build_order_selection_prompt(active_orders, active_only=True)
+            save_chat_exchange(conn, int(session["user_id"]), user_message, reply)
             conn.close()
-            return jsonify({"reply": prompt})
+            return jsonify({"reply": reply})
 
-        prompt = build_order_selection_prompt(user_orders, active_only=False)
+        reply = build_order_selection_prompt(user_orders, active_only=False)
+        save_chat_exchange(conn, int(session["user_id"]), user_message, reply)
         conn.close()
-        return jsonify({"reply": prompt})
+        return jsonify({"reply": reply})
 
     faq_questions = get_faq_questions(conn)
     matched_question, reason = faq_string_match(user_message, faq_questions)
 
     if not matched_question:
         app.logger.info("FAQ fallback used. reason=%s query=%s", reason, user_message)
+        save_chat_exchange(conn, int(session["user_id"]), user_message, FALLBACK_MESSAGE)
         conn.close()
         return jsonify({"reply": FALLBACK_MESSAGE})
 
     answer = get_faq_answer(conn, matched_question)
+    reply = answer if answer else FALLBACK_MESSAGE
+    save_chat_exchange(conn, int(session["user_id"]), user_message, reply)
     conn.close()
 
     if not answer:
-        return jsonify({"reply": FALLBACK_MESSAGE})
+        return jsonify({"reply": reply})
 
-    return jsonify({"reply": answer})
+    return jsonify({"reply": reply})
+
+
+@app.route("/get-chat-history")
+def get_chat_history():
+    if not session.get("user_id"):
+        return jsonify({"error": "Please login first."}), 401
+
+    conn = get_db_connection()
+    rows = conn.execute(
+        """
+        SELECT message, sender, timestamp
+        FROM chat_history
+        WHERE user_id = ? AND active = 1
+        ORDER BY id ASC
+        """,
+        (session["user_id"],),
+    ).fetchall()
+    conn.close()
+
+    messages = [
+        {
+            "message": row["message"],
+            "sender": row["sender"],
+            "timestamp": row["timestamp"],
+        }
+        for row in rows
+    ]
+    return jsonify({"has_active_chat": bool(messages), "messages": messages})
+
+
+@app.route("/resolve-chat", methods=["POST"])
+def resolve_chat():
+    if not session.get("user_id"):
+        return jsonify({"error": "Please login first."}), 401
+
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE chat_history SET active = 0 WHERE user_id = ? AND active = 1",
+        (session["user_id"],),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
 
 
 @app.route("/logout")
