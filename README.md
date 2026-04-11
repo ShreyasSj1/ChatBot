@@ -1,10 +1,9 @@
-vjvjvjvjv
-## Swiggy-style Chatbot (Flask + SQLite + Gemini)
+## Swiggy-style Chatbot (Flask + SQLite + String Matching)
 
 ### Run
 
 ```bash
-pip install flask requests
+pip install flask
 python app.py
 ```
 
@@ -18,9 +17,3 @@ python3 app.py
 
 - User IDs: `1` to `5`
 - Passwords: `pass1` to `pass5`
-
-### Gemini Key
-
-Set your key in:
-
-- `app.py` → `GEMINI_API_KEY = "PASTE_YOUR_GEMINI_API_KEY_HERE"`
