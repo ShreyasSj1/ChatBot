@@ -13,7 +13,7 @@ app.secret_key = "replace_with_a_secure_secret_key"
 DB_PATH = os.path.join(os.path.dirname(__file__), "chatbot.db")
 
 FALLBACK_MESSAGE = "Sorry, this information is not available currently."
-MIN_FAQ_MATCH_CONFIDENCE = 0.45
+MIN_FAQ_MATCH_CONFIDENCE = 0.65
 ACTIVE_ORDER_STATUSES = {"preparing", "out for delivery"}
 
 
@@ -194,6 +194,24 @@ def parse_order_status_query(message: str) -> Optional[int]:
 def is_order_status_intent(message: str) -> bool:
     tokens = token_set(message)
     return bool({"order"} & tokens and ({"track", "status", "where", "delivery"} & tokens))
+
+
+def is_order_history_intent(message: str) -> bool:
+    normalized = normalize_question(message)
+    tokens = set(normalized.split())
+    has_order_word = bool({"order", "orders"} & tokens)
+    history_markers = {"past", "previous", "history", "all", "older", "recent", "list"}
+    return has_order_word and bool(history_markers & tokens)
+
+
+def build_all_orders_response(orders: list[sqlite3.Row]) -> str:
+    if not orders:
+        return "No orders found for your account right now."
+
+    lines = ["Here are all your orders:"]
+    for row in orders:
+        lines.append(f"#{row['order_id']} ({row['item_name']}) - {row['status']}")
+    return "\n".join(lines)
 
 
 def build_order_selection_prompt(orders: list[sqlite3.Row], active_only: bool = False) -> str:
@@ -398,6 +416,14 @@ def chat():
         return jsonify({"reply": FALLBACK_MESSAGE})
 
     conn = get_db_connection()
+
+    if is_order_history_intent(user_message):
+        user_orders = conn.execute(
+            "SELECT order_id, item_name, status FROM orders WHERE user_id = ? ORDER BY order_id DESC",
+            (session["user_id"],),
+        ).fetchall()
+        conn.close()
+        return jsonify({"reply": build_all_orders_response(user_orders)})
 
     order_id = parse_order_status_query(user_message)
     if order_id is not None:
