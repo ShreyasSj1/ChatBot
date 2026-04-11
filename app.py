@@ -14,6 +14,7 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "chatbot.db")
 
 FALLBACK_MESSAGE = "Sorry, this information is not available currently."
 MIN_FAQ_MATCH_CONFIDENCE = 0.45
+ACTIVE_ORDER_STATUSES = {"preparing", "out for delivery"}
 
 
 def get_db_connection() -> sqlite3.Connection:
@@ -121,6 +122,34 @@ def init_db() -> None:
             "Can I schedule an order for later?",
             "Yes, many restaurants allow scheduled delivery. Choose a future time slot during checkout if available.",
         ),
+        (
+            "Is there a minimum order amount?",
+            "Some restaurants set a minimum order amount. If applicable, you will see it on the restaurant page before checkout.",
+        ),
+        (
+            "How long does delivery usually take?",
+            "Delivery time depends on restaurant preparation time, rider availability, traffic, and distance. You will see an ETA while placing and tracking your order.",
+        ),
+        (
+            "Can I edit my order after placing it?",
+            "Order edits are usually possible only before the restaurant starts preparing your food. Open order details and check if Edit is available.",
+        ),
+        (
+            "What if an item is missing or wrong?",
+            "Open the order in Help and report missing or incorrect items with details or photos for faster resolution.",
+        ),
+        (
+            "Is cash on delivery available?",
+            "Cash on delivery is available only for eligible orders and locations. You will see it as a payment option at checkout when supported.",
+        ),
+        (
+            "How can I get an invoice for my order?",
+            "After delivery, open order details and download the invoice or receipt from the billing section if available.",
+        ),
+        (
+            "Can I reorder a previous order?",
+            "Yes, go to your order history and use Reorder on any eligible past order.",
+        ),
     ]
     cur.executemany(
         "INSERT OR IGNORE INTO faq (question, answer) VALUES (?, ?)",
@@ -160,6 +189,33 @@ def parse_order_status_query(message: str) -> Optional[int]:
             return None
         return int(id_match.group(1))
     return int(match.group(1))
+
+
+def is_order_status_intent(message: str) -> bool:
+    tokens = token_set(message)
+    return bool({"order"} & tokens and ({"track", "status", "where", "delivery"} & tokens))
+
+
+def build_order_selection_prompt(orders: list[sqlite3.Row], active_only: bool = False) -> str:
+    if not orders:
+        return "No orders found for your account right now."
+
+    limited_orders = orders[:5]
+    order_choices = ", ".join(
+        f"#{row['order_id']} ({row['item_name']})" for row in limited_orders
+    )
+
+    if active_only:
+        return (
+            "You have multiple active orders. Please choose an order ID to proceed: "
+            f"{order_choices}. You can type: order status <order_id>."
+        )
+
+    return (
+        "I could not find an active order in Preparing/Out for delivery status. "
+        f"Please choose an order ID and item to proceed: {order_choices}. "
+        "You can type: order status <order_id>."
+    )
 
 
 def normalize_question(text: str) -> str:
@@ -217,6 +273,20 @@ def faq_intent_rule_match(user_query: str, faq_questions: list[str]) -> Optional
         return question_by_norm.get(normalize_question("How do I request a refund?"))
     if {"schedule", "later"} & tokens:
         return question_by_norm.get(normalize_question("Can I schedule an order for later?"))
+    if "minimum" in tokens and "order" in tokens:
+        return question_by_norm.get(normalize_question("Is there a minimum order amount?"))
+    if "delivery" in tokens and ({"time", "eta", "long", "arrive"} & tokens):
+        return question_by_norm.get(normalize_question("How long does delivery usually take?"))
+    if "order" in tokens and ({"edit", "modify", "change"} & tokens):
+        return question_by_norm.get(normalize_question("Can I edit my order after placing it?"))
+    if {"missing", "wrong", "incorrect"} & tokens and "item" in tokens:
+        return question_by_norm.get(normalize_question("What if an item is missing or wrong?"))
+    if ("cash" in tokens and "delivery" in tokens) or "cod" in query:
+        return question_by_norm.get(normalize_question("Is cash on delivery available?"))
+    if {"invoice", "receipt", "bill"} & tokens:
+        return question_by_norm.get(normalize_question("How can I get an invoice for my order?"))
+    if {"reorder", "repeat"} & tokens:
+        return question_by_norm.get(normalize_question("Can I reorder a previous order?"))
     if "delivery" in tokens and ("fee" in query or "fees" in query or "kya hai" in user_query.lower()):
         return question_by_norm.get(normalize_question("What are delivery charges?"))
     return None
@@ -350,6 +420,35 @@ def chat():
                 "reply": "Order not found for your account. Please check the order ID and try again."
             }
         )
+
+    if is_order_status_intent(user_message):
+        user_orders = conn.execute(
+            "SELECT order_id, item_name, status FROM orders WHERE user_id = ? ORDER BY order_id DESC",
+            (session["user_id"],),
+        ).fetchall()
+        active_orders = [
+            row for row in user_orders if row["status"].strip().lower() in ACTIVE_ORDER_STATUSES
+        ]
+
+        if len(active_orders) == 1:
+            row = active_orders[0]
+            conn.close()
+            return jsonify(
+                {
+                    "reply": (
+                        f"Order #{row['order_id']} ({row['item_name']}) is currently: {row['status']}."
+                    )
+                }
+            )
+
+        if len(active_orders) > 1:
+            prompt = build_order_selection_prompt(active_orders, active_only=True)
+            conn.close()
+            return jsonify({"reply": prompt})
+
+        prompt = build_order_selection_prompt(user_orders, active_only=False)
+        conn.close()
+        return jsonify({"reply": prompt})
 
     faq_questions = get_faq_questions(conn)
     matched_question, reason = faq_string_match(user_message, faq_questions)

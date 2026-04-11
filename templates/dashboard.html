@@ -8,9 +8,12 @@
 </head>
 <body class="dashboard-page">
   <header class="topbar">
-    <div>
-      <h1>Welcome, {{ username }}</h1>
-      <p>User ID: {{ user_id }}</p>
+    <div class="topbar-left">
+      <div class="brand-badge">ZappIT</div>
+      <div>
+        <h1>Welcome, {{ username }}</h1>
+        <p>User ID: {{ user_id }} • {{ orders|length }} Orders</p>
+      </div>
     </div>
     <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
   </header>
@@ -32,7 +35,11 @@
               <tr>
                 <td>{{ order.order_id }}</td>
                 <td>{{ order.item_name }}</td>
-                <td><span class="status-pill">{{ order.status }}</span></td>
+                <td>
+                  <span class="status-pill status-{{ order.status|lower|replace(' ', '-') }}">
+                    {{ order.status }}
+                  </span>
+                </td>
               </tr>
             {% endfor %}
           </tbody>
@@ -41,16 +48,33 @@
     </section>
 
     <section class="chat-panel">
-      <h2>Support Chatbot</h2>
-      <p class="chat-hint">Try: <strong>order status 1011</strong> or ask an FAQ in your own words.</p>
+      <div class="chat-header">
+        <h2>ZAPPIT</h2>
+        <p class="chat-hint" >Try: <strong>order status</strong> or <strong>order status 1021</strong>.</p>
+      </div>
+
+      <p class="quick-prompts-title">Quick actions</p>
+      <div class="quick-prompts" aria-label="Quick prompts">
+        <button type="button" class="chip" data-msg="where is my order">Where is my order?</button>
+        <button type="button" class="chip" data-msg="order status">Check order status</button>
+        <button type="button" class="chip" data-msg="how can i cancel an order">Cancel order</button>
+        <button type="button" class="chip" data-msg="delivery charges">Delivery charges</button>
+        <button type="button" class="chip" data-msg="how do i request a refund">Refund help</button>
+        <button type="button" class="chip" data-msg="what if an item is missing or wrong">Missing or wrong item</button>
+        <button type="button" class="chip" data-msg="how can i contact customer support">Contact support</button>
+        <button type="button" class="chip" data-msg="how long does delivery usually take">Delivery time</button>
+      </div>
 
       <div id="chat-window" class="chat-window">
-        <div class="message bot-message">Hi! I can help with order status and FAQ-related questions.</div>
+        <div class="message-row bot-row">
+          <div class="message bot-message">Hi! I can help with order status and FAQ-related questions.</div>
+          <span class="message-time">Now</span>
+        </div>
       </div>
 
       <form id="chat-form" class="chat-form">
         <input id="chat-input" type="text" placeholder="Type your message..." autocomplete="off" required>
-        <button type="submit">Send</button>
+        <button id="send-btn" type="submit">Send</button>
       </form>
     </section>
   </main>

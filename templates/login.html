@@ -7,26 +7,43 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body class="login-page">
-  <div class="login-card">
-    <h1>Food Support Assistant</h1>
-    <p>Login with your user ID and password</p>
+  <div class="bg-shape bg-shape-one"></div>
+  <div class="bg-shape bg-shape-two"></div>
+  <div class="login-shell">
+    <div class="login-side">
+      <div class="brand-badge">ZAPPIT</div>
+      <h1>Instant answers. Faster deliveries.</h1>
+      <p>Track orders, check common issues, and get instant support from one simple dashboard.</p>
+      <div class="demo-credentials">
+        <h3>Demo Credentials</h3>
+        <p>Use any of these to log in:</p>
+        <ul>
+          <li>User ID `1` with password `pass1`</li>
+          <li>User ID `2` with password `pass2`</li>
+          <li>User ID `3` with password `pass3`</li>
+          <li>User ID `4` with password `pass4`</li>
+          <li>User ID `5` with password `pass5`</li>
+        </ul>
+      </div>
+    </div>
 
-    {% if error %}
-      <div class="error-msg">{{ error }}</div>
-    {% endif %}
+    <div class="login-card">
+      <h2>Welcome back</h2>
+      <p>Login with your user ID and password</p>
 
-    <form action="{{ url_for('login') }}" method="POST" class="login-form">
-      <label for="user_id">User ID</label>
-      <input id="user_id" name="user_id" type="text" placeholder="e.g. 1" required>
+      {% if error %}
+        <div class="error-msg">{{ error }}</div>
+      {% endif %}
 
-      <label for="password">Password</label>
-      <input id="password" name="password" type="password" placeholder="e.g. pass1" required>
+      <form action="{{ url_for('login') }}" method="POST" class="login-form">
+        <label for="user_id">User ID</label>
+        <input id="user_id" name="user_id" type="text" placeholder="e.g. 1" required>
 
-      <button type="submit">Login</button>
-    </form>
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" placeholder="e.g. pass1" required>
 
-    <div class="demo-tip">
-      Demo users: `1/pass1` to `5/pass5`
+        <button type="submit">Login</button>
+      </form>
     </div>
   </div>
 </body>
