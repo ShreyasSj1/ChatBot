@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swiggy Chatbot Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-page">
+  <div class="login-card">
+    <h1>Food Support Assistant</h1>
+    <p>Login with your user ID and password</p>
+
+    {% if error %}
+      <div class="error-msg">{{ error }}</div>
+    {% endif %}
+
+    <form action="{{ url_for('login') }}" method="POST" class="login-form">
+      <label for="user_id">User ID</label>
+      <input id="user_id" name="user_id" type="text" placeholder="e.g. 1" required>
+
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" placeholder="e.g. pass1" required>
+
+      <button type="submit">Login</button>
+    </form>
+
+    <div class="demo-tip">
+      Demo users: `1/pass1` to `5/pass5`
+    </div>
+  </div>
+</body>
+</html>

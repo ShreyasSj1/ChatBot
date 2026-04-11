@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swiggy-style Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="dashboard-page">
+  <header class="topbar">
+    <div>
+      <h1>Welcome, {{ username }}</h1>
+      <p>User ID: {{ user_id }}</p>
+    </div>
+    <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
+  </header>
+
+  <main class="dashboard-layout">
+    <section class="orders-panel">
+      <h2>Your Orders</h2>
+      <div class="orders-table-wrap">
+        <table class="orders-table">
+          <thead>
+            <tr>
+              <th>Order ID</th>
+              <th>Item</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for order in orders %}
+              <tr>
+                <td>{{ order.order_id }}</td>
+                <td>{{ order.item_name }}</td>
+                <td><span class="status-pill">{{ order.status }}</span></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="chat-panel">
+      <h2>Support Chatbot</h2>
+      <p class="chat-hint">Try: <strong>order status 1011</strong> or ask an FAQ in your own words.</p>
+
+      <div id="chat-window" class="chat-window">
+        <div class="message bot-message">Hi! I can help with order status and FAQ-related questions.</div>
+      </div>
+
+      <form id="chat-form" class="chat-form">
+        <input id="chat-input" type="text" placeholder="Type your message..." autocomplete="off" required>
+        <button type="submit">Send</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
