@@ -4,10 +4,10 @@ const chatWindow = document.getElementById("chat-window");
 const sendBtn = document.getElementById("send-btn");
 const micBtn = document.getElementById("mic-btn");
 const chips = document.querySelectorAll(".chip");
-const voiceStatePanel = document.getElementById("voice-state-panel");
-const waveBars = document.getElementById("wave-bars");
-const processingIndicator = document.getElementById("processing-indicator");
-const voiceStateText = document.getElementById("voice-state-text");
+const voiceOverlay = document.getElementById("voice-overlay");
+const voiceOverlayTitle = document.getElementById("voice-overlay-title");
+const voiceOverlaySubtitle = document.getElementById("voice-overlay-subtitle");
+const closeVoiceBtn = document.getElementById("close-voice-btn");
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const BOT_RESPONSE_DELAY_MS = 1500;
@@ -72,29 +72,49 @@ function formatTimestampLabel(rawTimestamp) {
 function setVoiceUiState(state) {
   voiceUiState = state;
 
-  if (!voiceStatePanel) {
-    return;
-  }
-
-  const isIdle = state === "idle";
-  voiceStatePanel.hidden = isIdle;
-  voiceStatePanel.classList.toggle("show", !isIdle);
-
-  if (waveBars) {
-    waveBars.hidden = state !== "listening";
-  }
-  if (processingIndicator) {
-    processingIndicator.hidden = state !== "processing";
-  }
-  if (voiceStateText) {
-    voiceStateText.textContent = state === "processing" ? "Processing..." : "Listening...";
-  }
 
   if (micBtn) {
     micBtn.classList.toggle("mic-active", state === "listening");
     micBtn.classList.toggle("mic-processing", state === "processing");
     micBtn.classList.toggle("listening", state === "listening");
     micBtn.setAttribute("aria-pressed", state === "listening" ? "true" : "false");
+  }
+
+  // Handle Full-Screen Overlay
+  if (voiceOverlay) {
+    const isOverlayState = state === "listening" || state === "processing" || state === "speaking";
+    if (isOverlayState) {
+      voiceOverlay.hidden = false;
+      // Small delay to trigger transition
+      requestAnimationFrame(() => {
+        voiceOverlay.classList.add("show");
+      });
+    } else if (state === "idle" && !isSpeaking) {
+      voiceOverlay.classList.remove("show");
+      // Wait for transition then hide
+      setTimeout(() => {
+        if (!voiceOverlay.classList.contains("show")) {
+          voiceOverlay.hidden = true;
+        }
+      }, 400);
+    }
+
+    voiceOverlay.classList.remove("listening", "processing", "speaking");
+    if (state !== "idle") {
+      voiceOverlay.classList.add(state);
+    }
+
+    if (voiceOverlayTitle) {
+      if (state === "listening") voiceOverlayTitle.textContent = "Listening...";
+      else if (state === "processing") voiceOverlayTitle.textContent = "Thinking...";
+      else if (state === "speaking") voiceOverlayTitle.textContent = "Speaking...";
+    }
+
+    if (voiceOverlaySubtitle) {
+      if (state === "listening") voiceOverlaySubtitle.textContent = "Tell me what's on your mind";
+      else if (state === "processing") voiceOverlaySubtitle.textContent = "Just a moment...";
+      else if (state === "speaking") voiceOverlaySubtitle.textContent = "Zappit is responding";
+    }
   }
 }
 
@@ -301,6 +321,11 @@ function setSpeakingState(active) {
   isSpeaking = active;
   if (micBtn) {
     micBtn.classList.toggle("speaking", active);
+  }
+  if (active) {
+    setVoiceUiState("speaking");
+  } else if (voiceUiState === "speaking") {
+    setVoiceUiState("idle");
   }
 }
 
@@ -856,6 +881,18 @@ chips.forEach((chip) => {
 
 if (micBtn) {
   micBtn.addEventListener("click", startListening);
+}
+
+if (closeVoiceBtn) {
+  closeVoiceBtn.addEventListener("click", async () => {
+    if (isListening) {
+      await stopListeningIfNeeded();
+    }
+    if (hasActiveSpeech()) {
+      await interruptSpeechWithFade({ soft: false });
+    }
+    setVoiceUiState("idle");
+  });
 }
 
 if (chatInput) {
