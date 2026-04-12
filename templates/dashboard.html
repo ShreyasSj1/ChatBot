@@ -11,50 +11,56 @@
     <div class="topbar-left">
       <div class="brand-badge">ZappIT</div>
       <div>
-        <h1>Welcome, {{ username }}</h1>
-        <p>User ID: {{ user_id }} • {{ orders|length }} Orders</p>
+        <h1><span data-i18n="welcome">Welcome</span>, {{ username }}</h1>
+        <div class="header-meta">
+          <p><span data-i18n="user_id">User ID</span>: {{ user_id }} • {{ orders|length }} <span data-i18n="orders">Orders</span></p>
+          <div class="lang-selector">
+            <button type="button" class="lang-btn active" data-lang="en">EN</button>
+            <button type="button" class="lang-btn" data-lang="hi">हिन्दी</button>
+          </div>
+        </div>
       </div>
     </div>
-    <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
+    <a class="logout-btn" href="{{ url_for('logout') }}" data-i18n="logout">Logout</a>
   </header>
 
   <main class="dashboard-layout">
     <section class="orders-panel">
-      <h2>Your Orders</h2>
+      <h2 data-i18n="your_orders">Your Orders</h2>
       <div class="orders-list">
         {% for order in orders %}
           {% set status = order.status|lower %}
           <article class="order-card">
             <div class="order-card-head">
               <div>
-                <p class="order-id">Order #{{ order.order_id }}</p>
+                <p class="order-id"><span data-i18n="order_prefix">Order</span> #{{ order.order_id }}</p>
                 <p class="order-item">{{ order.item_name }}</p>
               </div>
-              <span class="status-pill status-{{ status|replace(' ', '-') }}">{{ order.status }}</span>
+              <span class="status-pill status-{{ status|replace(' ', '-') }}" data-status="{{ status }}">{{ order.status }}</span>
             </div>
 
             <div class="order-timeline {% if status == 'cancelled' %}is-cancelled{% endif %}">
               <div class="timeline-step {% if status in ['preparing', 'out for delivery', 'delivered'] %}completed{% endif %} {% if status == 'preparing' %}active{% endif %}">
                 <span class="timeline-dot"></span>
-                <span class="timeline-label">Preparing</span>
+                <span class="timeline-label" data-i18n="status_preparing">Preparing</span>
               </div>
               <div class="timeline-line"></div>
 
               <div class="timeline-step {% if status in ['out for delivery', 'delivered'] %}completed{% endif %} {% if status == 'out for delivery' %}active{% endif %}">
                 <span class="timeline-dot"></span>
-                <span class="timeline-label">Out for delivery</span>
+                <span class="timeline-label" data-i18n="status_out">Out for delivery</span>
               </div>
               <div class="timeline-line"></div>
 
               <div class="timeline-step {% if status == 'delivered' %}completed active{% endif %}">
                 <span class="timeline-dot"></span>
-                <span class="timeline-label">Delivered</span>
+                <span class="timeline-label" data-i18n="status_delivered">Delivered</span>
               </div>
               <div class="timeline-line"></div>
 
               <div class="timeline-step {% if status == 'cancelled' %}cancelled active{% endif %}">
                 <span class="timeline-dot"></span>
-                <span class="timeline-label">Cancelled</span>
+                <span class="timeline-label" data-i18n="status_cancelled">Cancelled</span>
               </div>
             </div>
           </article>
@@ -64,36 +70,36 @@
 
     <section class="chat-panel">
       <div class="chat-header">
-        <h2>ZAPPIT</h2>
-        <p class="chat-hint">Try: <strong>order status</strong> or <strong>order status 1021</strong>.</p>
+        <h2 data-i18n="zappit_title">ZAPPIT</h2>
+        <p class="chat-hint"><span data-i18n="try_hint">Try</span>: <strong data-i18n="hint_1">order status</strong> <span data-i18n="or">or</span> <strong data-i18n="hint_2">order status 1021</strong>.</p>
       </div>
 
-      <p class="quick-prompts-title">Quick actions</p>
+      <p class="quick-prompts-title" data-i18n="quick_actions">Quick actions</p>
       <div class="quick-prompts" aria-label="Quick prompts">
-        <button type="button" class="chip" data-msg="where is my order">Where is my order?</button>
-        <button type="button" class="chip" data-msg="order status">Check order status</button>
-        <button type="button" class="chip" data-msg="how can i cancel an order">Cancel order</button>
-        <button type="button" class="chip" data-msg="delivery charges">Delivery charges</button>
-        <button type="button" class="chip" data-msg="how do i request a refund">Refund help</button>
-        <button type="button" class="chip" data-msg="what if an item is missing or wrong">Missing or wrong item</button>
-        <button type="button" class="chip" data-msg="how can i contact customer support">Contact support</button>
-        <button type="button" class="chip" data-msg="how long does delivery usually take">Delivery time</button>
+        <button type="button" class="chip" data-msg="where is my order" data-msg-hi="मेरा ऑर्डर कहाँ है?" data-i18n="chip_where">Where is my order?</button>
+        <button type="button" class="chip" data-msg="order status" data-msg-hi="ऑर्डर स्टेटस" data-i18n="chip_status">Check order status</button>
+        <button type="button" class="chip" data-msg="how can i cancel an order" data-msg-hi="ऑर्डर रद्द करें" data-i18n="chip_cancel">Cancel order</button>
+        <button type="button" class="chip" data-msg="delivery charges" data-msg-hi="डिलिवरी शुल्क" data-i18n="chip_charges">Delivery charges</button>
+        <button type="button" class="chip" data-msg="how do i request a refund" data-msg-hi="रिफंड का अनुरोध" data-i18n="chip_refund">Refund help</button>
+        <button type="button" class="chip" data-msg="what if an item is missing or wrong" data-msg-hi="कुछ गायब या गलत है" data-i18n="chip_missing">Missing or wrong item</button>
+        <button type="button" class="chip" data-msg="how can i contact customer support" data-msg-hi="सहायता से संपर्क करें" data-i18n="chip_support">Contact support</button>
+        <button type="button" class="chip" data-msg="how long does delivery usually take" data-msg-hi="डिलिवरी में समय" data-i18n="chip_time">Delivery time</button>
       </div>
 
       <div id="chat-window" class="chat-window">
         <div class="message-row bot-row">
-          <div class="message bot-message">Hi! I can help with order status and FAQ-related questions.</div>
-          <span class="message-time">Now</span>
+          <div class="message bot-message" data-i18n="initial_bot_msg">Hi! I can help with order status and FAQ-related questions.</div>
+          <span class="message-time" data-i18n="now">Now</span>
         </div>
       </div>
 
 
       <form id="chat-form" class="chat-form">
-        <input id="chat-input" type="text" placeholder="Type your message..." autocomplete="off" required>
+        <input id="chat-input" type="text" placeholder="Type your message..." autocomplete="off" required data-i18n-placeholder="input_placeholder">
         <button id="mic-btn" type="button" class="mic-button" aria-label="Use voice input" title="Use voice input">
           <span aria-hidden="true">🎤</span>
         </button>
-        <button id="send-btn" type="submit">Send</button>
+        <button id="send-btn" type="submit" data-i18n="send">Send</button>
       </form>
 
     </section>

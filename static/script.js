@@ -24,6 +24,89 @@ let voiceUiState = "idle";
 let cachedActiveHistory = [];
 let chatLockedByResolution = false;
 let resolvePromptRendered = false;
+let activeLanguage = localStorage.getItem("zappit_lang") || "en";
+let isVoiceMode = false;
+
+const langBtns = document.querySelectorAll(".lang-btn");
+
+const UI_STRINGS = {
+  en: {
+    welcome: "Welcome",
+    user_id: "User ID",
+    orders: "Orders",
+    logout: "Logout",
+    your_orders: "Your Orders",
+    order_prefix: "Order",
+    status_preparing: "Preparing",
+    status_out: "Out for delivery",
+    status_delivered: "Delivered",
+    status_cancelled: "Cancelled",
+    zappit_title: "ZAPPIT",
+    try_hint: "Try",
+    or: "or",
+    hint_1: "order status",
+    hint_2: "order status 1021",
+    quick_actions: "Quick actions",
+    chip_where: "Where is my order?",
+    chip_status: "Check order status",
+    chip_cancel: "Cancel order",
+    chip_charges: "Delivery charges",
+    chip_refund: "Refund help",
+    chip_missing: "Missing or wrong item",
+    chip_support: "Contact support",
+    chip_time: "Delivery time",
+    initial_bot_msg: "Hi! I can help with order status and FAQ-related questions.",
+    now: "Now",
+    input_placeholder: "Type your message...",
+    send: "Send",
+    listening: "Listening...",
+    processing: "Thinking...",
+    speaking: "Speaking...",
+    listening_sub: "Tell me what's on your mind",
+    processing_sub: "Just a moment...",
+    speaking_sub: "Zappit is responding",
+    mic_error: "Microphone access is required for voice input",
+    understanding_error: "Could not understand, please try again"
+  },
+  hi: {
+    welcome: "स्वागत है",
+    user_id: "यूज़र आईडी",
+    orders: "ऑर्डर",
+    logout: "लॉगआउट",
+    your_orders: "आपके ऑर्डर",
+    order_prefix: "ऑर्डर",
+    status_preparing: "तैयार हो रहा है",
+    status_out: "डिलिवरी के लिए निकल गया",
+    status_delivered: "डिलिवर हो गया",
+    status_cancelled: "रद्द कर दिया गया",
+    zappit_title: "जप्पिट",
+    try_hint: "कोशिश करें",
+    or: "या",
+    hint_1: "ऑर्डर स्टेटस",
+    hint_2: "ऑर्डर स्टेटस 1021",
+    quick_actions: "तुरंत कार्रवाई",
+    chip_where: "मेरा ऑर्डर कहाँ है?",
+    chip_status: "ऑर्डर स्टेटस चेक करें",
+    chip_cancel: "ऑर्डर रद्द करें",
+    chip_charges: "डिलिवरी शुल्क",
+    chip_refund: "रिफंड सहायता",
+    chip_missing: "आइटम गायब या गलत है",
+    chip_support: "सपोर्ट से संपर्क करें",
+    chip_time: "डिलिवरी का समय",
+    initial_bot_msg: "नमस्ते! मैं आपके ऑर्डर स्टेटस और FAQ से जुड़े सवालों में आपकी मदद कर सकता हूँ।",
+    now: "अभी",
+    input_placeholder: "अपना संदेश लिखें...",
+    send: "भेजें",
+    listening: "सुन रहे हैं...",
+    processing: "सोच रहे हैं...",
+    speaking: "बोल रहे हैं...",
+    listening_sub: "बताएं मैं आपकी क्या मदद कर सकता हूँ",
+    processing_sub: "बस एक पल...",
+    speaking_sub: "जप्पिट जवाब दे रहा है",
+    mic_error: "वॉयस इनपुट के लिए माइक्रोफ़ोन एक्सेस आवश्यक है",
+    understanding_error: "समझ नहीं आया, कृपया पुनः प्रयास करें"
+  }
+};
 
 const INITIAL_BOT_MESSAGE = "Hi! I can help with order status and FAQ-related questions.";
 
@@ -71,7 +154,7 @@ function formatTimestampLabel(rawTimestamp) {
 
 function setVoiceUiState(state) {
   voiceUiState = state;
-
+  const strings = UI_STRINGS[activeLanguage] || UI_STRINGS.en;
 
   if (micBtn) {
     micBtn.classList.toggle("mic-active", state === "listening");
@@ -82,7 +165,7 @@ function setVoiceUiState(state) {
 
   // Handle Full-Screen Overlay
   if (voiceOverlay) {
-    const isOverlayState = state === "listening" || state === "processing" || state === "speaking";
+    const isOverlayState = (state === "listening" || state === "processing" || state === "speaking") && isVoiceMode;
     if (isOverlayState) {
       voiceOverlay.hidden = false;
       // Small delay to trigger transition
@@ -105,15 +188,15 @@ function setVoiceUiState(state) {
     }
 
     if (voiceOverlayTitle) {
-      if (state === "listening") voiceOverlayTitle.textContent = "Listening...";
-      else if (state === "processing") voiceOverlayTitle.textContent = "Thinking...";
-      else if (state === "speaking") voiceOverlayTitle.textContent = "Speaking...";
+      if (state === "listening") voiceOverlayTitle.textContent = strings.listening;
+      else if (state === "processing") voiceOverlayTitle.textContent = strings.processing;
+      else if (state === "speaking") voiceOverlayTitle.textContent = strings.speaking;
     }
 
     if (voiceOverlaySubtitle) {
-      if (state === "listening") voiceOverlaySubtitle.textContent = "Tell me what's on your mind";
-      else if (state === "processing") voiceOverlaySubtitle.textContent = "Just a moment...";
-      else if (state === "speaking") voiceOverlaySubtitle.textContent = "Zappit is responding";
+      if (state === "listening") voiceOverlaySubtitle.textContent = strings.listening_sub;
+      else if (state === "processing") voiceOverlaySubtitle.textContent = strings.processing_sub;
+      else if (state === "speaking") voiceOverlaySubtitle.textContent = strings.speaking_sub;
     }
   }
 }
@@ -270,35 +353,26 @@ function scoreVoice(voice) {
   const lang = (voice.lang || "").toLowerCase();
   let score = 0;
 
-  if (lang.startsWith("en")) {
-    score += 40;
+  const targetLang = activeLanguage === "hi" ? "hi" : "en";
+
+  if (lang.startsWith(targetLang)) {
+    score += 100;
   }
-  if (lang === "en-us") {
-    score += 15;
+  
+  if (targetLang === "en") {
+    if (lang === "en-us") score += 15;
+    if (/(samantha|zira|jenny|aria|allison|ava|female|woman|karen|moira)/.test(name)) score += 35;
+  } else {
+    if (lang === "hi-in") score += 20;
+    if (/(madhur|kalpana|swara|hemant|female|woman)/.test(name)) score += 35;
   }
+
   if (voice.localService) {
     score += 45;
   } else {
     score -= 35;
   }
-  if (/online/.test(name)) {
-    score -= 30;
-  }
-
-  if (/(samantha|zira|jenny|aria|allison|ava|female|woman|karen|moira)/.test(name)) {
-    score += 35;
-  }
-  if (/(david|mark|guy|male|man)/.test(name)) {
-    score -= 20;
-  }
-
-  const preferredIndex = preferredVoiceNames.findIndex(
-    (candidate) => candidate.toLowerCase() === name
-  );
-  if (preferredIndex !== -1) {
-    score += 120 - preferredIndex;
-  }
-
+  
   return score;
 }
 
@@ -592,11 +666,11 @@ async function speakText(text, options = {}) {
   }, TTS_LEAD_IN_MS);
 }
 
-async function sendChatMessage(message) {
+async function sendChatMessage(message, lang = "en") {
   const response = await fetch("/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, lang }),
   });
 
   if (!response.ok) {
@@ -618,6 +692,14 @@ async function handleSend(event, options = {}) {
 
   if (hasActiveSpeech()) {
     await interruptSpeechWithFade({ soft: true });
+  }
+
+  // If sending via text/button, exit voice mode visuals
+  if (!options.fromVoice) {
+    isVoiceMode = false;
+    if (voiceOverlay && !voiceOverlay.hidden) {
+      setVoiceUiState("idle");
+    }
   }
 
   const message = chatInput.value.trim();
@@ -642,7 +724,7 @@ async function handleSend(event, options = {}) {
   const typingEl = appendTyping();
 
   try {
-    const reply = await sendChatMessage(message);
+    const reply = await sendChatMessage(message, activeLanguage);
     window.setTimeout(() => {
       if (shouldSpeak) {
         speakText(reply, {
@@ -720,11 +802,12 @@ function startListening() {
     return;
   }
 
+  isVoiceMode = true;
   recognition = new SpeechRecognition();
-  recognition.lang = (navigator.language || "en-US");
+  recognition.lang = activeLanguage === "hi" ? "hi-IN" : (navigator.language || "en-US");
   recognition.interimResults = true;
   recognition.maxAlternatives = 1;
-  recognition.continuous = false;
+  recognition.continuous = true;
   let finalTranscript = "";
   let interimTranscript = "";
   let hasSubmittedTranscript = false;
@@ -756,7 +839,7 @@ function startListening() {
     return true;
   };
 
-  const scheduleFastFinalize = (delay = 420) => {
+  const scheduleFastFinalize = (delay = 1200) => {
     clearFinalizeTimer();
     finalizeTimer = window.setTimeout(() => {
       submitTranscript(finalTranscript || interimTranscript);
@@ -793,27 +876,39 @@ function startListening() {
       return;
     }
 
-    if (interimTranscript) {
-      scheduleFastFinalize(380);
+    if (interimTranscript || finalTranscript) {
+      scheduleFastFinalize(1200);
     }
   };
 
   recognition.onspeechend = () => {
-    if (!hasSubmittedTranscript) {
-      scheduleFastFinalize(220);
+    // With continuous: true, onspeechend is less critical but still a hint
+    if (!hasSubmittedTranscript && (finalTranscript || interimTranscript)) {
+      scheduleFastFinalize(1500);
+    }
+  };
+
+  recognition.onend = () => {
+    isListening = false;
+    if (!hasSubmittedTranscript && (finalTranscript.trim() || interimTranscript.trim())) {
+      submitTranscript(finalTranscript || interimTranscript);
+    } else if (!hasSubmittedTranscript) {
+      setVoiceUiState("idle");
     }
   };
 
   recognition.onnomatch = () => {
-    appendMessage("Could not understand, please try again", "bot");
+    const strings = UI_STRINGS[activeLanguage] || UI_STRINGS.en;
+    appendMessage(strings.understanding_error, "bot");
     setVoiceUiState("idle");
   };
 
   recognition.onerror = (event) => {
+    const strings = UI_STRINGS[activeLanguage] || UI_STRINGS.en;
     if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-      alert("Microphone access is required for voice input");
+      alert(strings.mic_error);
     } else if (event.error === "no-speech" || event.error === "audio-capture") {
-      appendMessage("Could not understand, please try again", "bot");
+      appendMessage(strings.understanding_error, "bot");
     }
 
     if (voiceUiState !== "processing") {
@@ -874,7 +969,8 @@ chips.forEach((chip) => {
     if (chatLockedByResolution) {
       return;
     }
-    chatInput.value = chip.dataset.msg || "";
+    const msg = (activeLanguage === "hi" && chip.dataset.msgHi) ? chip.dataset.msgHi : (chip.dataset.msg || "");
+    chatInput.value = msg;
     handleSend(null, { shouldSpeak: true });
   });
 });
@@ -885,6 +981,7 @@ if (micBtn) {
 
 if (closeVoiceBtn) {
   closeVoiceBtn.addEventListener("click", async () => {
+    isVoiceMode = false;
     if (isListening) {
       await stopListeningIfNeeded();
     }
@@ -934,6 +1031,54 @@ if (!hasStoredVoiceSettings) {
   applyVoiceStyle("sweet");
 }
 saveVoiceSettings();
+
+// Language Toggles initialization
+function updateLangUI(lang) {
+  activeLanguage = lang;
+  localStorage.setItem("zappit_lang", lang);
+  langBtns.forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.lang === lang);
+  });
+  applyLanguageToUI(lang);
+  updatePreferredVoice();
+}
+
+function applyLanguageToUI(lang) {
+  const strings = UI_STRINGS[lang] || UI_STRINGS.en;
+  
+  // Update static text elements
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const key = el.getAttribute("data-i18n");
+    if (strings[key]) {
+      el.textContent = strings[key];
+    }
+  });
+
+  // Update placeholders
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+    const key = el.getAttribute("data-i18n-placeholder");
+    if (strings[key]) {
+      el.placeholder = strings[key];
+    }
+  });
+
+  // Update status pills specially if needed
+  document.querySelectorAll(".status-pill").forEach(el => {
+    const status = el.getAttribute("data-status"); // "preparing", "delivered", etc.
+    const key = "status_" + status.replace(/\s+/g, "_");
+    if (strings[key]) {
+      el.textContent = strings[key];
+    }
+  });
+}
+
+langBtns.forEach(btn => {
+  btn.addEventListener("click", () => {
+    updateLangUI(btn.dataset.lang);
+  });
+});
+
+updateLangUI(activeLanguage);
 setVoiceUiState("idle");
 initContinuationPrompt();
 
