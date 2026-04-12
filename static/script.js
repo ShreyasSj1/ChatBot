@@ -4,22 +4,15 @@ const chatWindow = document.getElementById("chat-window");
 const sendBtn = document.getElementById("send-btn");
 const micBtn = document.getElementById("mic-btn");
 const chips = document.querySelectorAll(".chip");
-const smartSuggestionsEl = document.getElementById("smart-suggestions");
-const resumeCard = document.getElementById("resume-card");
-const resolveYesBtn = document.getElementById("resolve-yes-btn");
-const resolveNoBtn = document.getElementById("resolve-no-btn");
 const voiceStatePanel = document.getElementById("voice-state-panel");
 const waveBars = document.getElementById("wave-bars");
 const processingIndicator = document.getElementById("processing-indicator");
 const voiceStateText = document.getElementById("voice-state-text");
-const voiceStyleSelect = document.getElementById("voice-style");
-const voiceRateInput = document.getElementById("voice-rate");
-const voicePitchInput = document.getElementById("voice-pitch");
-const voiceVolumeInput = document.getElementById("voice-volume");
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const BOT_RESPONSE_DELAY_MS = 1500;
 const TTS_LEAD_IN_MS = 140;
+const VOICE_SETTINGS_STORAGE_KEY = "zappit_voice_settings_v1";
 
 let recognition = null;
 let isListening = false;
@@ -29,6 +22,8 @@ let speechSequence = 0;
 let speechFadeTimer = null;
 let voiceUiState = "idle";
 let cachedActiveHistory = [];
+let chatLockedByResolution = false;
+let resolvePromptRendered = false;
 
 const INITIAL_BOT_MESSAGE = "Hi! I can help with order status and FAQ-related questions.";
 
@@ -120,6 +115,68 @@ function appendMessage(text, type, timeLabel = getTimeLabel()) {
   chatWindow.appendChild(row);
   chatWindow.scrollTop = chatWindow.scrollHeight;
   return row;
+}
+
+function setChatLocked(locked) {
+  chatLockedByResolution = locked;
+  if (chatInput) {
+    chatInput.disabled = locked;
+  }
+  if (sendBtn) {
+    sendBtn.disabled = locked;
+  }
+  if (micBtn) {
+    micBtn.disabled = locked;
+  }
+  chips.forEach((chip) => {
+    chip.disabled = locked;
+  });
+}
+
+function appendResolvePromptMessage() {
+  if (resolvePromptRendered) {
+    return;
+  }
+
+  const row = document.createElement("div");
+  row.className = "message-row bot-row resolve-row";
+
+  const bubble = document.createElement("div");
+  bubble.className = "message bot-message resolve-chat-message";
+  bubble.innerHTML = `
+    <p>Is your previous query resolved?</p>
+    <div class="resolve-inline-actions">
+      <button type="button" data-action="yes">Yes</button>
+      <button type="button" data-action="no">No</button>
+    </div>
+  `;
+
+  row.appendChild(bubble);
+  chatWindow.appendChild(row);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+  resolvePromptRendered = true;
+
+  bubble.querySelector("[data-action='yes']")?.addEventListener("click", async () => {
+    await resolvePreviousChat();
+    cachedActiveHistory = [];
+    resolvePromptRendered = false;
+    setChatLocked(false);
+    resetChatWindow();
+  });
+
+  bubble.querySelector("[data-action='no']")?.addEventListener("click", async () => {
+    if (!cachedActiveHistory.length) {
+      const historyPayload = await fetchActiveHistory();
+      cachedActiveHistory = historyPayload.messages || [];
+    }
+    resolvePromptRendered = false;
+    setChatLocked(false);
+    if (cachedActiveHistory.length) {
+      restoreChatHistory(cachedActiveHistory);
+      return;
+    }
+    resetChatWindow();
+  });
 }
 
 function appendTyping() {
@@ -316,6 +373,13 @@ function interruptSpeechWithFade(options = { soft: true }) {
   });
 }
 
+function hasActiveSpeech() {
+  return Boolean(
+    ("speechSynthesis" in window) &&
+      (window.speechSynthesis.speaking || window.speechSynthesis.pending || isSpeaking)
+  );
+}
+
 function warmupSpeechEngine() {
   if (!("speechSynthesis" in window)) {
     return Promise.resolve();
@@ -351,22 +415,45 @@ function warmupSpeechEngine() {
   });
 }
 
-function syncVoiceControlsFromSettings() {
-  if (voiceStyleSelect) {
-    voiceStyleSelect.value = voiceSettings.style;
-  }
-  if (voiceRateInput) {
-    voiceRateInput.value = String(voiceSettings.rate);
-  }
-  if (voicePitchInput) {
-    voicePitchInput.value = String(voiceSettings.pitch);
-  }
-  if (voiceVolumeInput) {
-    voiceVolumeInput.value = String(voiceSettings.volume);
+function saveVoiceSettings() {
+  try {
+    window.localStorage.setItem(VOICE_SETTINGS_STORAGE_KEY, JSON.stringify(voiceSettings));
+  } catch (error) {
+    // no-op
   }
 }
 
-function applyVoiceStyle(style, shouldSyncInputs = true) {
+function loadVoiceSettings() {
+  try {
+    const raw = window.localStorage.getItem(VOICE_SETTINGS_STORAGE_KEY);
+    if (!raw) {
+      return false;
+    }
+    const parsed = JSON.parse(raw);
+    const incomingStyle = parsed?.style;
+    const incomingRate = Number(parsed?.rate);
+    const incomingPitch = Number(parsed?.pitch);
+    const incomingVolume = Number(parsed?.volume);
+
+    if (typeof incomingStyle === "string" && voiceStylePresets[incomingStyle]) {
+      voiceSettings.style = incomingStyle;
+    }
+    if (!Number.isNaN(incomingRate) && incomingRate >= 0.75 && incomingRate <= 1.15) {
+      voiceSettings.rate = incomingRate;
+    }
+    if (!Number.isNaN(incomingPitch) && incomingPitch >= 0.85 && incomingPitch <= 1.35) {
+      voiceSettings.pitch = incomingPitch;
+    }
+    if (!Number.isNaN(incomingVolume) && incomingVolume >= 0.4 && incomingVolume <= 1) {
+      voiceSettings.volume = incomingVolume;
+    }
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+function applyVoiceStyle(style) {
   const preset = voiceStylePresets[style];
   if (!preset) {
     return;
@@ -376,85 +463,12 @@ function applyVoiceStyle(style, shouldSyncInputs = true) {
   voiceSettings.rate = preset.rate;
   voiceSettings.pitch = preset.pitch;
   voiceSettings.volume = preset.volume;
-
-  if (shouldSyncInputs) {
-    syncVoiceControlsFromSettings();
-  }
-}
-
-function wireVoiceControls() {
-  if (voiceStyleSelect) {
-    voiceStyleSelect.addEventListener("change", (event) => {
-      applyVoiceStyle(event.target.value);
-    });
-  }
-
-  if (voiceRateInput) {
-    voiceRateInput.addEventListener("input", (event) => {
-      voiceSettings.rate = Number(event.target.value);
-    });
-  }
-
-  if (voicePitchInput) {
-    voicePitchInput.addEventListener("input", (event) => {
-      voiceSettings.pitch = Number(event.target.value);
-    });
-  }
-
-  if (voiceVolumeInput) {
-    voiceVolumeInput.addEventListener("input", (event) => {
-      voiceSettings.volume = Number(event.target.value);
-    });
-  }
-}
-
-function getContextualSuggestions(lastUserMessage, botReply) {
-  const text = `${lastUserMessage || ""} ${botReply || ""}`.toLowerCase();
-
-  if (text.includes("order #") || text.includes("currently")) {
-    return ["Track my order", "Delivery time", "Cancel my order"];
-  }
-  if (text.includes("cancel")) {
-    return ["Cancellation policy", "Track my order", "Contact support"];
-  }
-  if (text.includes("refund")) {
-    return ["Refund help", "Missing or wrong item", "Contact support"];
-  }
-  if (text.includes("delivery")) {
-    return ["Delivery charges", "Delivery time", "Track my order"];
-  }
-  if (text.includes("support") || text.includes("help")) {
-    return ["Contact support", "Refund help", "Track my order"];
-  }
-
-  return ["Track my order", "Cancel my order", "Delivery time"];
-}
-
-function renderSmartSuggestions(suggestions) {
-  if (!smartSuggestionsEl) {
-    return;
-  }
-
-  const uniqueSuggestions = [...new Set(suggestions)].slice(0, 3);
-  smartSuggestionsEl.innerHTML = "";
-
-  uniqueSuggestions.forEach((label) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "smart-chip";
-    button.textContent = label;
-    button.addEventListener("click", () => {
-      chatInput.value = label.toLowerCase();
-      handleSend();
-    });
-    smartSuggestionsEl.appendChild(button);
-  });
+  saveVoiceSettings();
 }
 
 function resetChatWindow() {
   chatWindow.innerHTML = "";
   appendMessage(INITIAL_BOT_MESSAGE, "bot", "Now");
-  renderSmartSuggestions(["Track my order", "Cancel my order", "Delivery time"]);
 }
 
 function restoreChatHistory(messages) {
@@ -465,11 +479,6 @@ function restoreChatHistory(messages) {
     appendMessage(entry.message, senderType, formatTimestampLabel(entry.timestamp));
   });
 
-  const lastUser = [...messages].reverse().find((m) => m.sender === "user");
-  const lastBot = [...messages].reverse().find((m) => m.sender === "bot");
-  renderSmartSuggestions(
-    getContextualSuggestions(lastUser?.message || "", lastBot?.message || "")
-  );
 }
 
 async function fetchActiveHistory() {
@@ -478,13 +487,6 @@ async function fetchActiveHistory() {
     return { has_active_chat: false, messages: [] };
   }
   return response.json();
-}
-
-function showResumeCard(visible) {
-  if (!resumeCard) {
-    return;
-  }
-  resumeCard.hidden = !visible;
 }
 
 async function resolvePreviousChat() {
@@ -585,6 +587,14 @@ async function handleSend(event, options = {}) {
     event.preventDefault();
   }
 
+  if (chatLockedByResolution) {
+    return;
+  }
+
+  if (hasActiveSpeech()) {
+    await interruptSpeechWithFade({ soft: true });
+  }
+
   const message = chatInput.value.trim();
   if (!message) {
     return;
@@ -602,36 +612,53 @@ async function handleSend(event, options = {}) {
   if (options.fromVoice) {
     setVoiceUiState("processing");
   }
+  const shouldSpeak = Boolean(options.shouldSpeak);
 
   const typingEl = appendTyping();
 
   try {
     const reply = await sendChatMessage(message);
     window.setTimeout(() => {
-      speakText(reply, {
-        onStart: () => {
-          typingEl.remove?.();
-          appendMessage(reply, "bot");
-          renderSmartSuggestions(getContextualSuggestions(message, reply));
-          if (voiceUiState !== "idle") {
-            setVoiceUiState("idle");
-          }
-        },
-      });
+      if (shouldSpeak) {
+        speakText(reply, {
+          onStart: () => {
+            typingEl.remove?.();
+            appendMessage(reply, "bot");
+            if (voiceUiState !== "idle") {
+              setVoiceUiState("idle");
+            }
+          },
+        });
+        return;
+      }
+
+      typingEl.remove?.();
+      appendMessage(reply, "bot");
+      if (voiceUiState !== "idle") {
+        setVoiceUiState("idle");
+      }
     }, BOT_RESPONSE_DELAY_MS);
   } catch (error) {
     window.setTimeout(() => {
       const fallback = "Sorry, this information is not available currently.";
-      speakText(fallback, {
-        onStart: () => {
-          typingEl.remove?.();
-          appendMessage(fallback, "bot");
-          renderSmartSuggestions(getContextualSuggestions(message, fallback));
-          if (voiceUiState !== "idle") {
-            setVoiceUiState("idle");
-          }
-        },
-      });
+      if (shouldSpeak) {
+        speakText(fallback, {
+          onStart: () => {
+            typingEl.remove?.();
+            appendMessage(fallback, "bot");
+            if (voiceUiState !== "idle") {
+              setVoiceUiState("idle");
+            }
+          },
+        });
+        return;
+      }
+
+      typingEl.remove?.();
+      appendMessage(fallback, "bot");
+      if (voiceUiState !== "idle") {
+        setVoiceUiState("idle");
+      }
     }, BOT_RESPONSE_DELAY_MS);
   } finally {
     if (sendBtn) {
@@ -642,6 +669,10 @@ async function handleSend(event, options = {}) {
 }
 
 function startListening() {
+  if (chatLockedByResolution) {
+    return;
+  }
+
   if (!SpeechRecognition) {
     alert("Speech recognition is not supported in this browser. Please use Chrome.");
     return;
@@ -670,6 +701,49 @@ function startListening() {
   recognition.maxAlternatives = 1;
   recognition.continuous = false;
   let finalTranscript = "";
+  let interimTranscript = "";
+  let hasSubmittedTranscript = false;
+  let finalizeTimer = null;
+
+  const clearFinalizeTimer = () => {
+    if (finalizeTimer) {
+      window.clearTimeout(finalizeTimer);
+      finalizeTimer = null;
+    }
+  };
+
+  const submitTranscript = (sourceTranscript) => {
+    const transcript = (sourceTranscript || "").trim();
+    if (!transcript || hasSubmittedTranscript) {
+      return false;
+    }
+
+    hasSubmittedTranscript = true;
+    clearFinalizeTimer();
+    setVoiceUiState("processing");
+    chatInput.value = transcript;
+    try {
+      recognition.stop();
+    } catch (error) {
+      // no-op
+    }
+    handleSend(null, { fromVoice: true, shouldSpeak: true });
+    return true;
+  };
+
+  const scheduleFastFinalize = (delay = 420) => {
+    clearFinalizeTimer();
+    finalizeTimer = window.setTimeout(() => {
+      submitTranscript(finalTranscript || interimTranscript);
+      if (!hasSubmittedTranscript) {
+        try {
+          recognition.stop();
+        } catch (error) {
+          // no-op
+        }
+      }
+    }, delay);
+  };
 
   recognition.onstart = () => {
     isListening = true;
@@ -677,31 +751,31 @@ function startListening() {
   };
 
   recognition.onresult = (event) => {
+    let latestInterim = "";
     for (let i = event.resultIndex; i < event.results.length; i += 1) {
       if (event.results[i].isFinal) {
         finalTranscript += `${event.results[i][0].transcript} `;
+      } else {
+        latestInterim += `${event.results[i][0].transcript} `;
       }
     }
-    const transcript = finalTranscript.trim();
-    if (!transcript) {
+
+    if (latestInterim.trim()) {
+      interimTranscript = latestInterim.trim();
+    }
+
+    if (submitTranscript(finalTranscript)) {
       return;
     }
 
-    setVoiceUiState("processing");
-    chatInput.value = transcript;
-    finalTranscript = "";
-    recognition.stop();
-    handleSend(null, { fromVoice: true });
+    if (interimTranscript) {
+      scheduleFastFinalize(380);
+    }
   };
 
   recognition.onspeechend = () => {
-    if (voiceUiState === "listening") {
-      setVoiceUiState("processing");
-    }
-    try {
-      recognition.stop();
-    } catch (error) {
-      // no-op: stop may throw if already stopped
+    if (!hasSubmittedTranscript) {
+      scheduleFastFinalize(220);
     }
   };
 
@@ -723,7 +797,11 @@ function startListening() {
   };
 
   recognition.onend = () => {
+    clearFinalizeTimer();
     isListening = false;
+    if (!hasSubmittedTranscript) {
+      submitTranscript(finalTranscript || interimTranscript);
+    }
     if (voiceUiState === "listening") {
       setVoiceUiState("idle");
     }
@@ -753,14 +831,14 @@ async function initContinuationPrompt() {
     const historyPayload = await fetchActiveHistory();
     const hasActive = Boolean(historyPayload?.has_active_chat) && historyPayload.messages?.length > 0;
     cachedActiveHistory = hasActive ? historyPayload.messages : [];
-    showResumeCard(hasActive);
-
-    if (!hasActive) {
-      renderSmartSuggestions(["Track my order", "Cancel my order", "Delivery time"]);
+    if (hasActive) {
+      setChatLocked(true);
+      appendResolvePromptMessage();
+      return;
     }
+    setChatLocked(false);
   } catch (error) {
-    showResumeCard(false);
-    renderSmartSuggestions(["Track my order", "Cancel my order", "Delivery time"]);
+    setChatLocked(false);
   }
 }
 
@@ -768,8 +846,11 @@ chatForm.addEventListener("submit", handleSend);
 
 chips.forEach((chip) => {
   chip.addEventListener("click", () => {
+    if (chatLockedByResolution) {
+      return;
+    }
     chatInput.value = chip.dataset.msg || "";
-    handleSend();
+    handleSend(null, { shouldSpeak: true });
   });
 });
 
@@ -777,30 +858,45 @@ if (micBtn) {
   micBtn.addEventListener("click", startListening);
 }
 
-if (resolveYesBtn) {
-  resolveYesBtn.addEventListener("click", async () => {
-    await resolvePreviousChat();
-    cachedActiveHistory = [];
-    showResumeCard(false);
-    resetChatWindow();
-  });
-}
-
-if (resolveNoBtn) {
-  resolveNoBtn.addEventListener("click", async () => {
-    if (!cachedActiveHistory.length) {
-      const historyPayload = await fetchActiveHistory();
-      cachedActiveHistory = historyPayload.messages || [];
-    }
-    showResumeCard(false);
-    if (cachedActiveHistory.length) {
-      restoreChatHistory(cachedActiveHistory);
+if (chatInput) {
+  chatInput.addEventListener("input", () => {
+    if (hasActiveSpeech()) {
+      interruptSpeechWithFade({ soft: true });
     }
   });
 }
 
-applyVoiceStyle("sweet");
-wireVoiceControls();
+const logoutBtn = document.querySelector(".logout-btn");
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", async (event) => {
+    event.preventDefault();
+    if (hasActiveSpeech()) {
+      await interruptSpeechWithFade({ soft: true });
+    }
+    window.location.href = logoutBtn.getAttribute("href") || "/logout";
+  });
+}
+
+window.addEventListener("beforeunload", () => {
+  if (!("speechSynthesis" in window)) {
+    return;
+  }
+  if (hasActiveSpeech()) {
+    try {
+      window.speechSynthesis.pause();
+      window.speechSynthesis.cancel();
+      setSpeakingState(false);
+    } catch (error) {
+      // no-op
+    }
+  }
+});
+
+const hasStoredVoiceSettings = loadVoiceSettings();
+if (!hasStoredVoiceSettings) {
+  applyVoiceStyle("sweet");
+}
+saveVoiceSettings();
 setVoiceUiState("idle");
 initContinuationPrompt();
 

@@ -13,7 +13,7 @@ app.secret_key = "replace_with_a_secure_secret_key"
 DB_PATH = os.path.join(os.path.dirname(__file__), "chatbot.db")
 
 FALLBACK_MESSAGE = "Sorry, this information is not available currently."
-MIN_FAQ_MATCH_CONFIDENCE = 0.65
+MIN_FAQ_MATCH_CONFIDENCE = 0.6
 ACTIVE_ORDER_STATUSES = {"preparing", "out for delivery"}
 
 
